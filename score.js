@@ -355,6 +355,7 @@
         /* ─── 觀看進度/沒看過徽章 (評分下方) ─── */
         .ani-watch-progress-badge {
             position: absolute;
+            top: 32px; left: 6px;
             background: rgba(255, 255, 255, 0.95);
             color: #0ea5e9;
             font-size: 10px;
@@ -371,10 +372,10 @@
         }
         .ani-watch-progress-badge.unwatched {
             background: rgba(241, 245, 249, 0.95);
-            color: #64748b;
-            border: 1px solid rgba(100, 116, 139, 0.2);
-            font-weight: 500;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+            color: #0ea5e9;
+            border: 1px solid rgba(14, 165, 233, 0.4);
+            font-weight: 700;
+            box-shadow: 0 2px 6px rgba(14, 165, 233, 0.15);
         }
 
         /* ─── 🛡️ 修正：防雷與完全屏蔽樣式（支援開關完全連動） ─── */
@@ -420,14 +421,15 @@
         }
 
         .ani-unwatched-card {
-            border: 1.5px solid rgba(2, 132, 199, 0.18) !important;
-            background: rgba(2, 132, 199, 0.02) !important;
-            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.08) !important;
+            border: 2px solid rgba(2, 132, 199, 0.55) !important;
+            background: rgba(2, 132, 199, 0.03) !important;
+            box-shadow: 0 4px 14px rgba(2, 132, 199, 0.15) !important;
             transition: all 0.3s ease !important;
+            box-sizing: border-box !important;
         }
         .ani-unwatched-card:hover {
-            border-color: rgba(2, 132, 199, 0.6) !important;
-            box-shadow: 0 8px 24px rgba(2, 132, 199, 0.22) !important;
+            border-color: rgba(2, 132, 199, 0.95) !important;
+            box-shadow: 0 8px 28px rgba(2, 132, 199, 0.3) !important;
         }
 
         /* 🎯 已觀看封面淡化選擇器：支援首頁新番與各類卡片（防雷遮罩優先） */
@@ -1031,7 +1033,7 @@
                                .replace(/[\n\r\t]/g, '')
                                .trim();
 
-        // 移除常見的集數格式
+        // 移除常見的集數格式 (保留數字以便後續判斷)
         cleanTitle = cleanTitle
             .replace(/\s*\[\d+\]\s*$/, '')
             .replace(/\s*第\s*\d+\s*[集話]\s*$/, '')
@@ -1040,6 +1042,12 @@
             .trim();
 
         return cleanTitle;
+    }
+
+    // 提取標題中的總集數或集數資訊 (輔助函式)
+    function extractEpisodeInfo(titleStr) {
+        const match = titleStr.match(/第\s*(\d+)\s*[集話]/);
+        return match ? parseInt(match[1]) : null;
     }
 
     // 驗證解析到的名稱是否為真正的動畫標題
@@ -1325,21 +1333,27 @@
             cardLink.classList.add('ani-watched-fade');
             cardLink.classList.remove('ani-unwatched-card');
 
-            let progressLabel = "已看過";
+            let displayLabel = "已觀看";
             if (historyProgress) {
-                progressLabel = historyProgress;
+                // 將 "看至 X 集" 改為更專業的 "觀看進度：第 X 集"
+                const epMatch = historyProgress.match(/看至\s*(\d+)\s*集/);
+                if (epMatch) {
+                    displayLabel = `觀看進度：第 ${epMatch[1]} 話`;
+                } else {
+                    displayLabel = historyProgress.replace('看至', '觀看進度：');
+                }
             } else if (officialWatchText) {
                 const matchEp = officialWatchText.match(/看至第\s*(\d+)\s*集/);
                 if (matchEp) {
-                    progressLabel = `看至 ${matchEp[1]} 集`;
+                    displayLabel = `觀看進度：第 ${matchEp[1]} 話`;
                 }
             }
-            progressBadge.textContent = progressLabel;
+            progressBadge.textContent = displayLabel;
         } else {
             cardLink.classList.remove('ani-watched-fade');
             cardLink.classList.add('ani-unwatched-card');
             progressBadge.classList.add('unwatched');
-            progressBadge.textContent = "沒看過";
+            progressBadge.textContent = "尚未觀看";
         }
 
         container.appendChild(progressBadge);
