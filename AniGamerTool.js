@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AniGamer - Rating Display & Spoiler Protection Helper (https://ani.gamer.com.tw)
-// @name:zh-TW   巴哈姆特動畫瘋 - 評分顯示與防雷美化助手 (https://ani.gamer.com.tw)
-// @name:zh-cn   巴哈姆特动画疯 - 评分显示与防雷美化助手 (https://ani.gamer.com.tw)
+// @name         AniGamer - Rating Display & Spoiler Protection Helper
+// @name:zh-TW   巴哈姆特動畫瘋 - 評分顯示與防雷美化助手
+// @name:zh-cn   巴哈姆特动画疯 - 评分显示与防雷美化助手
 // @namespace    http://tampermonkey.net/
 // @version      1.1.3
 // @description  Beautify AniGamer anime cover ratings. Auto color-coded scores, hoverable 5-star distribution tooltip, skeleton loading, 24h LRU cache, anti-spoiler mask/block, lazy-load and rating auto-sort.
