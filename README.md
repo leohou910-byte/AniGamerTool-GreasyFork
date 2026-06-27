@@ -1,4 +1,4 @@
-*OwOb AI test
+*OwOb AI test*
 
 ## 🌟 核心特色
 
