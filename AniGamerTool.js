@@ -1,7 +1,9 @@
 // ==UserScript==
-// @name         巴哈姆特動畫瘋 - 評分顯示與防雷美化助手
+// @name         AniGamer - Rating Display & Spoiler Protection Helper (https://ani.gamer.com.tw)
+// @name:zh-TW   巴哈姆特動畫瘋 - 評分顯示與防雷美化助手 (https://ani.gamer.com.tw)
+// @name:zh-CN   巴哈姆特动画疯 - 评分显示与防雷美化助手 (https://ani.gamer.com.tw)
 // @namespace    http://tampermonkey.net/
-// @version      1.1.2
+// @version      1.1.3
 // @description  美化動畫瘋封面評分，支援自動分數變色、懸浮五星佔比詳情、骨架屏載入、24小時快取、最低分數防雷遮罩/完全屏蔽、懶載入與LRU快取保護。
 // @author       LeoHou & AI
 // @match        https://ani.gamer.com.tw/*
