@@ -4,7 +4,9 @@
 // @name:zh-CN   巴哈姆特动画疯 - 评分显示与防雷美化助手 (https://ani.gamer.com.tw)
 // @namespace    http://tampermonkey.net/
 // @version      1.1.3
-// @description  美化動畫瘋封面評分，支援自動分數變色、懸浮五星佔比詳情、骨架屏載入、24小時快取、最低分數防雷遮罩/完全屏蔽、懶載入與LRU快取保護。
+// @description  Beautify AniGamer anime cover ratings. Auto color-coded scores, hoverable 5-star distribution tooltip, skeleton loading, 24h LRU cache, anti-spoiler mask/block, lazy-load and rating auto-sort.
+// @description:zh-TW 美化動畫瘋封面評分，支援自動分數變色、懸浮五星佔比詳情、骨架屏載入、24小時快取、最低分數防雷遮罩/完全屏蔽、懶載入與LRU快取保護。
+// @description:zh-CN 美化动画疯封面评分，支持自动分数变色、悬浮五星占比详情、骨架屏加载、24小时缓存、最低分数防雷遮罩/完全屏蔽、懒加载与LRU缓存保护。
 // @author       LeoHou & AI
 // @match        https://ani.gamer.com.tw/*
 // @grant        GM_xmlhttpRequest
