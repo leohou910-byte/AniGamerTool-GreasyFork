@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         巴哈姆特動畫瘋 - 評分顯示與防雷美化助手
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.1.1
 // @description  美化動畫瘋封面評分，支援自動分數變色、懸浮五星佔比詳情、骨架屏載入、24小時快取、最低分數防雷遮罩/完全屏蔽、懶載入與LRU快取保護。
 // @author       LeoHou & AI
 // @match        https://ani.gamer.com.tw/*
 // @grant        GM_xmlhttpRequest
 // @connect      ani.gamer.com.tw
-// @connect      api.gamer.com.tw
+// @match        *://ani.gamer.com.tw/*
 // @connect      gamer.com.tw
 // @run-at       document-idle
 // @license      MIT
