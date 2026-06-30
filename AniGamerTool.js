@@ -971,7 +971,7 @@
                 .arm-list-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px dashed rgba(59,130,246,0.12);transition:background 0.2s;}
                 .arm-list-item:hover{background:rgba(59,130,246,0.03);border-radius:6px;}
                 .arm-list-item:last-of-type{border-bottom:none;}
-                .arm-list-left{display:flex;flex-direction:column;gap:2px;flex:1;}
+                .arm-list-left{display:flex;flex-direction:column;gap:2px;flex:1;justify-content:center;}
                 .arm-list-title{font-size:13px;font-weight:700;color:#111827;letter-spacing:0.2px;}
                 .arm-list-desc{font-size:11px;color:#4b5563;line-height:1.4;font-weight:500;}
                 .arm-toggle-pill{width:42px;height:22px;border-radius:11px;background:linear-gradient(135deg,#e5e7eb 0%,#d1d5db 100%);position:relative;cursor:pointer;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);flex-shrink:0;border:1.5px solid rgba(0,0,0,0.08);box-shadow:inset 0 1px 2px rgba(0,0,0,0.08);}
