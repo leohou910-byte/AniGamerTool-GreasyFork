@@ -164,7 +164,7 @@
             return item;
         },
 
-        set(sn, score, count) {
+        set(sn, score, count, totalEpisodes) {
             if (this._writeLock) return;
             this._writeLock = true;
             try {
@@ -183,6 +183,7 @@
                 this._cache[sn] = {
                     score: parseFloat(score),
                     count: parseInt(count),
+                    totalEpisodes: totalEpisodes || null,
                     timestamp: Date.now(),
                     lastUsed: Date.now()
                 };
@@ -279,6 +280,7 @@
                         if (response.status === 200) {
                             const textVal = response.responseText;
                             resolve({
+                                ok: true,
                                 status: response.status,
                                 text: async () => textVal,
                                 json: async () => { try { return JSON.parse(textVal); } catch { return { data: textVal }; } }
@@ -387,7 +389,11 @@
             if (!scoreMatch || !countMatch) return null;
             const rawScore = parseFloat(scoreMatch[1]);
             const count = parseInt(countMatch[1]);
-            return { score: rawScore > 5 ? rawScore / 2 : rawScore, count };
+            // 從 JSON-LD 提取實際總集數 (numberOfEpisodes)，比卡片標示的「共X集」更準確
+            let totalEpisodes = null;
+            const episodeMatch = html.match(/"numberOfEpisodes"\s*:\s*(\d+)/);
+            if (episodeMatch) totalEpisodes = parseInt(episodeMatch[1]);
+            return { score: rawScore > 5 ? rawScore / 2 : rawScore, count, totalEpisodes };
         },
 
         generateStarDistribution(score) {
@@ -445,6 +451,10 @@
             const countFormatted = count.toLocaleString('zh-TW');
             const cardLink = DOMUtils.getCardLink(container);
             if (cardLink) cardLink.setAttribute('data-rating-score', score);
+            // 儲存從 JSON-LD 取得的實際總集數，比卡片標示更準確
+            if (cardLink && data.totalEpisodes) {
+                cardLink.setAttribute('data-rating-total-episodes', data.totalEpisodes);
+            }
 
             const isLowSample = count < ConfigManager.data.sampleThreshold;
             const tier = this._getTierInfo(score, isLowSample);
@@ -543,7 +553,7 @@
                 const parsed = this.parseFromHtml(html);
                 skeleton.remove();
                 if (parsed) {
-                    CacheManager.set(sn, parsed.score, parsed.count);
+                    CacheManager.set(sn, parsed.score, parsed.count, parsed.totalEpisodes);
                     this.render(container, parsed);
                     this.applyFilter(container, parsed.score);
                     App.progress.ratingLoaded++;
@@ -561,84 +571,137 @@
     // 6. 觀看紀錄管理 (WatchHistoryManager)
     // ================================================================
     const WatchHistoryManager = {
-        _map: new Map(),
+        /**
+         * 資料結構：
+         *   _rawArray: 歷遍所有分頁後的完整原始陣列（每一頁 history[] concat 而成）
+         *   _byVideoSn: videoSn → item（供卡片快速查詢）
+         */
+        _rawArray: [],
+        _byVideoSn: new Map(),
 
-        load() {
-            try {
-                const saved = localStorage.getItem('aniRating_watchedList');
-                if (saved) {
-                    const parsed = JSON.parse(saved);
-                    if (Array.isArray(parsed)) {
-                        this._map = new Map(parsed);
-                        console.log('[評分美化] 成功自本地快取載入已觀看動畫列表，筆數：', this._map.size);
-                    }
-                }
-            } catch (e) {
-                console.warn('[評分美化] 載入本地歷史紀錄快取失敗', e);
-                this._map = new Map();
-            }
-        },
-
-        _save() {
-            try {
-                localStorage.setItem('aniRating_watchedList', JSON.stringify(Array.from(this._map.entries())));
-            } catch (e) {
-                console.error('[評分美化] 儲存觀看紀錄失敗', e);
-            }
-        },
-
+        /**
+         * 使用原生 fetch() 遞迴抓取所有分頁的觀看紀錄。
+         * 瀏覽器會自動帶上 BAHAMUT Cookie，無需手動驗證。
+         * 所有分頁的 history[] 會 concat 成一個大陣列，
+         * 並建立 videoSn → item 的 Map 供快速查詢。
+         */
         async fetchHistory() {
             try {
                 console.log('[評分美化] 正在背景同步完整觀看紀錄...');
                 const API_URL = 'https://api.gamer.com.tw/anime/v3/history.php';
-                let updated = false, page = 1, totalPage = 1;
+                let page = 1;
+                const allItems = [];
 
                 App.progress.historyInProgress = true;
                 App.progress.historyCurrentPage = 0;
                 App.progress.historyTotalPages = 1;
                 App.progress.updateHistoryBar();
 
-                while (page <= totalPage) {
-                    const res = await RequestManager.gmFetch(`${API_URL}?page=${page}`);
-                    if (!res) break;
+                while (true) {
+                    App.progress.historyCurrentPage = page;
+                    App.progress.updateHistoryBar();
+
+                    // 主要使用 GM_xmlhttpRequest 以攜帶 BAHAMUT Cookie
+                    let res = await RequestManager.gmFetch(`${API_URL}?page=${page}`);
+                    // 若 GM 失敗則 fallback 到原生 fetch
+                    if (!res || !res.ok) {
+                        try { res = await fetch(`${API_URL}?page=${page}`); } catch { break; }
+                    }
+                    if (!res || !res.ok) break;
+
                     const json = await res.json();
                     const data = json?.data;
                     if (!data?.history?.length) break;
 
-                    totalPage = data.totalPage || 1;
-                    App.progress.historyTotalPages = totalPage;
-                    App.progress.historyCurrentPage = page;
-                    App.progress.updateHistoryBar();
+                    App.progress.historyTotalPages = data.totalPage || page;
 
-                    for (const item of data.history) {
-                        const cleanTitle = DOMUtils.cleanTitle(item.title);
-                        if (!DOMUtils.isValidAnimeTitle(cleanTitle)) continue;
-                        let progress = '已看過';
-                        if (item.breakPoint?.breakPoint === -1) progress = '已看完';
-                        else if (item.episode > 0) progress = `看至 ${item.episode} 集`;
-                        if (this._map.get(cleanTitle) !== progress) {
-                            this._map.set(cleanTitle, progress);
-                            updated = true;
-                        }
-                    }
+                    // 合併每一頁的陣列
+                    allItems.push(...data.history);
+
                     page++;
                     await new Promise(r => setTimeout(r, 300));
                 }
+
+                // 儲存原始完整陣列
+                this._rawArray = allItems;
+
+                // 建立 videoSn → item 的 Map
+                this._rebuildMaps();
 
                 App.progress.historyInProgress = false;
                 App.progress.historyCurrentPage = App.progress.historyTotalPages;
                 App.progress.updateHistoryBar();
 
-                if (updated) {
-                    this._save();
-                    console.log(`[評分美化] API 同步完成！共 ${this._map.size} 筆觀看紀錄`);
-                } else {
-                    console.log(`[評分美化] API 同步完成（目前 ${this._map.size} 筆）`);
-                }
-                if (this._map.size > 0) this.applyFadeToPage();
+                console.log(`[評分美化] API 同步完成！共 ${this._rawArray.length} 筆紀錄，${this._byVideoSn.size} 個 videoSn 索引`);
+                this.applyFadeToPage();
             } catch (e) {
                 console.error('[評分美化] API 同步觀看紀錄失敗', e);
             }
+        },
+
+        /** 從 _rawArray 重建 _byVideoSn Map */
+        _rebuildMaps() {
+            this._byVideoSn = new Map();
+            for (const item of this._rawArray) {
+                if (item.videoSn) {
+                    this._byVideoSn.set(item.videoSn, item);
+                }
+            }
+        },
+
+        /** 將 _rawArray 匯出為 JSON 檔案並下載 */
+        _exportJSON() {
+            if (this._rawArray.length === 0) return;
+            try {
+                const blob = new Blob([JSON.stringify(this._rawArray, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ani-history-${Date.now()}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                console.log(`[評分美化] 已匯出 JSON 檔案：${a.download} (${this._rawArray.length} 筆紀錄)`);
+            } catch (e) {
+                console.warn('[評分美化] 匯出 JSON 失敗', e);
+            }
+        },
+
+        /**
+         * 從卡片元素取得當前觀看進度。
+         * 優先權：
+         *   1. DOM 中的官方進度元素 (.history-lastwatch > .user-lastwatch)
+         *   2. API 查詢 (videoSn)
+         * @param {Element} cardLink 卡片連結元素
+         * @returns {{ episode: number, fullyWatched: boolean } | null}
+         */
+        _getWatchProgress(cardLink) {
+            if (!cardLink) return null;
+
+            // 1. DOM 直接讀取：.history-lastwatch > .user-lastwatch
+            const lastwatchEl = cardLink.querySelector('.history-lastwatch .user-lastwatch');
+            if (lastwatchEl) {
+                const episodeText = lastwatchEl.textContent.trim();
+                const episode = parseFloat(episodeText);
+                if (!isNaN(episode)) {
+                    return { episode, fullyWatched: false };
+                }
+            }
+
+            // 2. API 查詢：從 href 提取 sn (videoSn)
+            const match = cardLink.href.match(/sn=(\d+)/);
+            if (match) {
+                const videoSn = parseInt(match[1]);
+                const item = this._byVideoSn.get(videoSn);
+                if (item) {
+                    const episode = parseFloat(item.episode) || 0;
+                    const fullyWatched = item.breakPoint?.breakPoint === -1;
+                    return { episode, fullyWatched };
+                }
+            }
+
+            return null;
         },
 
         checkAndApplyFade(cardLink) {
@@ -649,59 +712,30 @@
             const oldBadge = container.querySelector('.ani-watch-progress-badge');
             if (oldBadge) oldBadge.remove();
 
-            const hasWatchedIndicator = cardLink.querySelector('.theme-barrier, .theme-watch, .theme-progress') !== null;
-            let officialWatchText = '';
-            for (const el of cardLink.querySelectorAll('span, p, div')) {
-                const text = el.textContent || '';
-                if (text.includes('已看過') || text.includes('看至第') || text.includes('觀看進度')) {
-                    officialWatchText = text.trim(); break;
-                }
-            }
-
-            let historyProgress = '';
-            const cardTitleEl = cardLink.querySelector('.theme-name, .theme-title, .newanime-title, h1, h2, h3');
-            const cardTitle = cardTitleEl ? cardTitleEl.textContent.trim() : (cardLink.querySelector('p, span')?.textContent.trim() || '');
-
-            if (cardTitle && this._map.size > 0) {
-                const cleanCardTitle = DOMUtils.cleanTitle(cardTitle);
-                const normalize = (s) => s.replace(/\s+/g, '').trim();
-                const cardNorm = normalize(cleanCardTitle);
-                for (const [historyTitle, progress] of this._map.entries()) {
-                    const histNorm = normalize(historyTitle);
-                    if (cardNorm.length > 0 && cardNorm === histNorm) {
-                        historyProgress = progress; break;
-                    }
-                }
-            }
-
-            const isWatched = hasWatchedIndicator || officialWatchText !== '' || historyProgress !== '';
+            const progress = this._getWatchProgress(cardLink);
             const badge = document.createElement('div');
             badge.className = 'ani-watch-progress-badge';
 
-            if (isWatched) {
+            if (progress) {
                 cardLink.classList.add('ani-watched-fade');
                 cardLink.classList.remove('ani-unwatched-card');
-                let label = '已觀看';
-                const totalEp = DOMUtils.getTotalEpisodesFromCard(cardLink) || DOMUtils.extractTotalEpisodes(cardTitle);
-                if (historyProgress) {
-                    const epMatch = historyProgress.match(/看至\s*(\d+)\s*集/);
-                    if (epMatch) {
-                        label = totalEp ? `觀看進度：第 ${epMatch[1]} / ${totalEp} 話` : `觀看進度：第 ${epMatch[1]} 話`;
-                    } else {
-                        label = historyProgress.replace('看至', '觀看進度：');
-                    }
-                } else if (officialWatchText) {
-                    const epMatch = officialWatchText.match(/看至第\s*(\d+)\s*集/);
-                    if (epMatch) {
-                        label = totalEp ? `觀看進度：第 ${epMatch[1]} / ${totalEp} 話` : `觀看進度：第 ${epMatch[1]} 話`;
-                    }
+                badge.classList.add('watched');
+
+                let label;
+                if (progress.fullyWatched) {
+                    label = '已看完';
+                } else if (progress.episode > 0) {
+                    // 支援小數集數顯示 (0.5, 1.5)
+                    label = `第 ${progress.episode} 話`;
+                } else {
+                    label = '已觀看';
                 }
-                badge.textContent = label;
+                badge.innerHTML = `<span class="watch-text">${label}</span>`;
             } else {
                 cardLink.classList.remove('ani-watched-fade');
                 cardLink.classList.add('ani-unwatched-card');
                 badge.classList.add('unwatched');
-                badge.textContent = '尚未觀看';
+                badge.innerHTML = `<span class="watch-text">尚未觀看</span>`;
             }
             container.appendChild(badge);
         },
@@ -914,9 +948,14 @@
                 .acr-dist-bar-bg{flex:1;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;}
                 .acr-dist-bar-fill{height:100%;border-radius:3px;}
                 .acr-dist-val{color:#d4d4d8;width:28px;text-align:right;font-size:10px;font-weight:500;flex-shrink:0;}
-                .ani-watch-progress-badge{position:absolute;top:32px;left:6px;background:rgba(255,255,255,0.95);color:#0ea5e9;font-size:10px;padding:3.5px 7px;border-radius:4px;font-weight:700;z-index:10;pointer-events:none;border:1px solid rgba(14,165,233,0.35);box-shadow:0 2px 8px rgba(0,0,0,0.08);letter-spacing:0.5px;line-height:1;transition:opacity 0.3s ease,filter 0.3s ease;}
-                .ani-watch-progress-badge.unwatched{background:rgba(255,235,238,0.95);color:#e53935;border:1px solid rgba(229,57,53,0.5);font-weight:700;box-shadow:0 2px 8px rgba(229,57,53,0.25);animation:acr-unwatched-pulse 2s infinite;}
-                @keyframes acr-unwatched-pulse{0%,100%{box-shadow:0 2px 8px rgba(229,57,53,0.25);}50%{box-shadow:0 2px 14px rgba(229,57,53,0.5);}}
+.ani-watch-progress-badge{position:absolute;top:32px;left:6px;font-size:9px;padding:2px 10px;border-radius:50px;font-weight:500;z-index:10;pointer-events:none;letter-spacing:0.3px;line-height:1.3;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);display:inline-flex;align-items:center;gap:3px;flex-wrap:nowrap;max-width:180px;animation:watch-badge-in 0.35s cubic-bezier(0.16,1,0.3,1);}
+.ani-watch-progress-badge .watch-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;font-weight:500;text-shadow:none;}
+.ani-watch-progress-badge.watched{background:rgba(59,130,246,0.22);color:#fff;border:none;box-shadow:0 2px 6px rgba(0,0,0,0.2);backdrop-filter:blur(6px);transition:all 0.3s cubic-bezier(0.4,0,0.2,1);}
+.ani-watch-progress-badge.watched::before{content:none;display:none;}
+                @keyframes watch-glow{0%,100%{opacity:0.5;}50%{opacity:1;}}
+.ani-watch-progress-badge.unwatched{background:rgba(80,80,85,0.45);color:#d4d4d8;border:none;box-shadow:0 1px 4px rgba(0,0,0,0.15);backdrop-filter:blur(4px);transition:all 0.3s cubic-bezier(0.4,0,0.2,1);}
+.ani-watch-progress-badge.unwatched::after{content:none;display:none;}
+@keyframes acr-unwatched-pulse{0%,100%{box-shadow:0 0 6px rgba(239,68,68,0.6),0 0 12px rgba(239,68,68,0.3);}50%{box-shadow:0 0 12px rgba(239,68,68,0.95),0 0 20px rgba(239,68,68,0.5);}}
                 body:not(.ani-disable-masking) .ani-low-rating-masked{filter:grayscale(0.95) opacity(0.2) blur(2.5px) !important;transition:filter 0.3s ease,opacity 0.3s ease;}
                 body:not(.ani-disable-masking) .ani-low-rating-masked .ani-custom-rating,body:not(.ani-disable-masking) .ani-low-rating-masked .ani-watch-progress-badge{opacity:1 !important;pointer-events:auto !important;filter:none !important;backdrop-filter:none !important;transition:opacity 0.3s ease;}
                 body:not(.ani-disable-masking) a:hover .ani-low-rating-masked,body:not(.ani-disable-masking) .theme-list-main:hover .ani-low-rating-masked,body:not(.ani-disable-masking) .newanime-block__link:hover .ani-low-rating-masked,body:not(.ani-disable-masking) .newanime-block:hover .ani-low-rating-masked,body:not(.ani-disable-masking) .theme-img-block:hover .ani-low-rating-masked{filter:grayscale(0) opacity(1) blur(0px) !important;}
@@ -928,6 +967,7 @@
                 body.ani-watched-fade-enabled .ani-watched-fade>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade .theme-img-block>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade .newanime-block__img>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade .newanime-img>img:not(.ani-low-rating-masked){opacity:0.32 !important;filter:grayscale(0.12) contrast(0.95);transition:opacity 0.3s ease,filter 0.3s ease;}
                 body.ani-watched-fade-enabled .ani-watched-fade:hover>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade:hover .theme-img-block>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade:hover .newanime-block__img>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade:hover .newanime-img>img:not(.ani-low-rating-masked){opacity:1 !important;filter:none !important;}
                 body.ani-watched-fade-enabled .ani-watched-fade{display:block !important;cursor:pointer;}
+                @keyframes watch-badge-in{0%{opacity:0;transform:translateY(-6px) scale(0.92);}100%{opacity:1;transform:translateY(0) scale(1);}}
                 .ani-float-btn{position:fixed;right:20px;width:44px;height:44px;border-radius:50%;background:#18181c;border:1px solid rgba(255,255,255,0.12);color:#d4d4d8;box-shadow:0 4px 16px rgba(0,0,0,0.5);display:none;align-items:center !important;justify-content:center !important;text-align:center !important;cursor:pointer;font-size:16px;font-weight:bold;z-index:9999;transition:all 0.2s ease;user-select:none;padding:0 !important;line-height:1 !important;box-sizing:border-box !important;}
                 .ani-float-btn:hover{transform:scale(1.08);background:#27272a;color:#3b82f6;border-color:rgba(59,130,246,0.4);}
                 .ani-float-btn.active{background:#3b82f6 !important;color:#fff !important;border-color:#2563eb !important;box-shadow:0 4px 20px rgba(59,130,246,0.4) !important;}
@@ -1030,8 +1070,11 @@
                 body.ani-user-dark-mode .acr-tier-average{color:#94a3b8 !important;border-color:rgba(148,163,184,0.35) !important;}
                 body.ani-user-dark-mode .acr-tier-poor{color:#ff5f5f !important;border-color:rgba(255,95,95,0.45) !important;background:rgba(22,10,10,0.9) !important;}
                 body.ani-user-dark-mode .acr-low-sample{color:#fb923c !important;border:2px solid rgba(251,146,60,0.65) !important;background:rgba(25,15,10,0.9) !important;box-shadow:0 0 0 1px rgba(251,146,60,0.35),0 2px 8px rgba(251,146,60,0.25) !important;animation:acr-pulse-warning 2s infinite !important;}
-                body.ani-user-dark-mode .ani-watch-progress-badge{background:rgba(15,23,42,0.9) !important;color:#38bdf8 !important;border-color:rgba(56,189,248,0.35) !important;box-shadow:0 2px 8px rgba(0,0,0,0.6) !important;}
-                body.ani-user-dark-mode .ani-watch-progress-badge.unwatched{background:rgba(24,24,27,0.85) !important;color:#a1a1aa !important;border-color:rgba(255,255,255,0.08) !important;}
+                body.ani-user-dark-mode .ani-watch-progress-badge.watched{background:rgba(59,130,246,0.28) !important;color:#fff !important;border:none !important;box-shadow:0 2px 6px rgba(0,0,0,0.25) !important;backdrop-filter:blur(6px) !important;}
+                body.ani-user-dark-mode .ani-watch-progress-badge.watched::before{display:none !important;}
+                body.ani-user-dark-mode .ani-watch-progress-badge.watched .watch-icon{background:#38bdf8 !important;box-shadow:0 0 6px #38bdf8 !important;}
+                body.ani-user-dark-mode .ani-watch-progress-badge.unwatched{background:rgba(60,60,65,0.55) !important;color:#d4d4d8 !important;border:none !important;backdrop-filter:blur(4px) !important;box-shadow:0 1px 4px rgba(0,0,0,0.2) !important;}
+                body.ani-user-dark-mode .ani-watch-progress-badge.unwatched .watch-icon{background:#6b7280 !important;box-shadow:0 0 1px rgba(107,114,128,0.3) !important;}
             `;
             document.head.appendChild(style);
         },
@@ -1291,18 +1334,20 @@
 
             document.body.appendChild(overlay);
 
-            // 綁定事件
+            // 綁定事件：將 camelCase key 轉換為 kebab-case id
             const toggleStates = {
                 armToggle: c.enabled, armSortToggle: c.sortEnabled, armMaskToggle: c.maskEnabled,
                 armBlockToggle: c.blockEnabled, armFadeWatchedToggle: c.fadeWatched
             };
 
-            Object.keys(toggleStates).forEach(id => {
+            Object.keys(toggleStates).forEach(key => {
+                // 將 camelCase 轉為 kebab-case（例: armToggle → arm-toggle）
+                const id = key.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
                 const el = document.getElementById(id);
                 if (!el) return;
                 el.addEventListener('click', () => {
-                    toggleStates[id] = !toggleStates[id];
-                    el.classList.toggle('on', toggleStates[id]);
+                    toggleStates[key] = !toggleStates[key];
+                    el.classList.toggle('on', toggleStates[key]);
                 });
             });
 
@@ -1347,10 +1392,10 @@
 
                 close();
 
-                if (toggleStates.armFadeWatchedToggle && !oldFadeWatched && WatchHistoryManager._map.size === 0) {
+                if (toggleStates.armFadeWatchedToggle && !oldFadeWatched && WatchHistoryManager._rawArray.length === 0) {
                     this.showToast('⏳ 正在背景同步觀看紀錄...');
                     WatchHistoryManager.fetchHistory().then(() => {
-                        if (WatchHistoryManager._map.size > 0) this.showToast('✅ 已同步 ' + WatchHistoryManager._map.size + ' 筆觀看紀錄');
+                        if (WatchHistoryManager._rawArray.length > 0) this.showToast('✅ 已同步 ' + WatchHistoryManager._rawArray.length + ' 筆觀看紀錄');
                     });
                 }
 
@@ -1493,9 +1538,6 @@
 
             // 載入快取
             CacheManager.load();
-
-            // 載入觀看紀錄
-            WatchHistoryManager.load();
 
             // 注入 CSS
             UIComponents.injectStyles();
