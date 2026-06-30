@@ -1,6 +1,6 @@
-# 🎬 巴哈姆特動畫瘋 - 評分顯示與防雷美化助手
+# 🎬 [動漫瘋] StarMap - 評分星圖
 
-**AniGamer - Rating Display & Spoiler Protection Helper**
+**StarMap - 評分星圖**
 
 一款強化巴哈姆特動畫瘋的使用者腳本（UserScript），為動畫封面加上**評分徽章**、**防雷遮罩/屏蔽**、**觀看進度標記**以及**自訂排序**等便利功能。
 
@@ -61,7 +61,7 @@
 ## 📦 安裝方式
 
 1. 瀏覽器需安裝 [Tampermonkey](https://www.tampermonkey.net/) 擴充功能。
-2. [點此安裝腳本](https://github.com/leohou910-byte/AniGamerTool-GreasyFork/raw/main/AniGamerTool.js)（或直接複製 `AniGamerTool.js` 內容至 Tampermonkey 新建腳本）。
+2. [點此安裝腳本](https://greasyfork.org/zh-TW/scripts/584454)（或直接複製 `AniGamerTool.js` 內容至 Tampermonkey 新建腳本）。
 3. 開啟 [巴哈姆特動畫瘋](https://ani.gamer.com.tw/)，即自動生效。
 
 ---
