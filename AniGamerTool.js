@@ -3,7 +3,7 @@
 // @name:zh-TW   [動漫瘋] StarMap - 評分星圖
 // @name:zh-CN   [動漫瘋] StarMap - 评分星图
 // @namespace    http://tampermonkey.net/
-// @version      1.2.6
+// @version      1.2.7
 // @description  Beautify AniGamer anime cover ratings. Auto color-coded scores, hoverable 5-star distribution tooltip, pulse skeleton loading, 24h LRU cache, anti-spoiler mask/block, lazy-load and rating auto-sort with global progress.
 // @description:zh-TW 美化動畫瘋封面評分，支援自動分數變色、懸浮五星佔比詳情、脈衝骨架屏載入、24小時快取、最低分數防雷遮罩/完全屏蔽、懶載入與全局進度條顯示。
 // @description:zh-CN 美化动画疯封面评分，支持自动分数变色、悬浮五星占比详情，脉搏骨架屏加载，24小时缓存，最低分数防雷遮罩/完全屏蔽，懒加载与全局进度条显示。
@@ -490,13 +490,6 @@
             badge.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
             container.appendChild(badge);
 
-            // 調整觀看進度徽章位置
-            const progressBadge = container.querySelector('.ani-watch-progress-badge');
-            if (progressBadge) {
-                progressBadge.style.top = `${6 + (badge.offsetHeight || 22) + 4}px`;
-                progressBadge.style.bottom = 'auto';
-            }
-
             UIComponents.updateActionButtonsVisibility();
             if (App.isSorted) SortManager.triggerDebounced();
         },
@@ -574,9 +567,11 @@
         /**
          * 資料結構：
          *   _rawArray: 歷遍所有分頁後的完整原始陣列（每一頁 history[] concat 而成）
-         *   _byVideoSn: videoSn → item（供卡片快速查詢）
+         *   _byAnimeSn: animeSn → item（供卡片快速查詢，卡片 href 用的是 animeSn）
+         *   _byVideoSn: videoSn → item（供其他用途）
          */
         _rawArray: [],
+        _byAnimeSn: new Map(),
         _byVideoSn: new Map(),
 
         /**
@@ -625,7 +620,7 @@
                 // 儲存原始完整陣列
                 this._rawArray = allItems;
 
-                // 建立 videoSn → item 的 Map
+                // 建立 animeSn 和 videoSn → item 的 Map
                 this._rebuildMaps();
 
                 App.progress.historyInProgress = false;
@@ -639,12 +634,26 @@
             }
         },
 
-        /** 從 _rawArray 重建 _byVideoSn Map */
+        /** 從 _rawArray 重建 _byAnimeSn 和 _byVideoSn Map */
         _rebuildMaps() {
+            this._byAnimeSn = new Map();
             this._byVideoSn = new Map();
             for (const item of this._rawArray) {
+                // 建立 animeSn → item 的索引（卡片 href 用的是 animeSn）
+                if (item.animeSn) {
+                    this._byAnimeSn.set(item.animeSn, item);
+                }
+                // 建立 videoSn → item 的索引（每一集的 videoSn）
                 if (item.videoSn) {
                     this._byVideoSn.set(item.videoSn, item);
+                }
+                // 同時建立 history 中每一集的 videoSn → item 的索引
+                if (item.history && Array.isArray(item.history)) {
+                    for (const hist of item.history) {
+                        if (hist.videoSn) {
+                            this._byVideoSn.set(hist.videoSn, item);
+                        }
+                    }
                 }
             }
         },
@@ -671,33 +680,63 @@
         /**
          * 從卡片元素取得當前觀看進度。
          * 優先權：
-         *   1. DOM 中的官方進度元素 (.history-lastwatch > .user-lastwatch)
+         *   1. DOM 中的官方進度元素 (多重 selector fallback)
          *   2. API 查詢 (videoSn)
          * @param {Element} cardLink 卡片連結元素
-         * @returns {{ episode: number, fullyWatched: boolean } | null}
+         * @returns {{ episode: number, rawEpisode: string, fullyWatched: boolean, latestEpisode: string, totalEpisodes: number | null } | null}
          */
         _getWatchProgress(cardLink) {
             if (!cardLink) return null;
 
-            // 1. DOM 直接讀取：.history-lastwatch > .user-lastwatch
-            const lastwatchEl = cardLink.querySelector('.history-lastwatch .user-lastwatch');
+            // 1. DOM 直接讀取：嘗試多種可能的 selector
+            const selectors = [
+                '.history-lastwatch .user-lastwatch',
+                '.anime-watchHistory-reply__lastwatch',
+                '.watch-history-lastwatch',
+                '[class*="lastwatch"]',
+                '[class*="watchHistory"] span'
+            ];
+            let lastwatchEl = null;
+            for (const sel of selectors) {
+                lastwatchEl = cardLink.querySelector(sel);
+                if (lastwatchEl) break;
+            }
+
             if (lastwatchEl) {
                 const episodeText = lastwatchEl.textContent.trim();
-                const episode = parseFloat(episodeText);
-                if (!isNaN(episode)) {
-                    return { episode, fullyWatched: false };
+                const numericEpisode = parseFloat(episodeText);
+                if (!isNaN(numericEpisode)) {
+                    return { episode: numericEpisode, rawEpisode: episodeText, fullyWatched: false, latestEpisode: episodeText, totalEpisodes: null };
                 }
             }
 
-            // 2. API 查詢：從 href 提取 sn (videoSn)
+            // 2. API 查詢：從 href 提取 sn (animeSn，不是 videoSn)
             const match = cardLink.href.match(/sn=(\d+)/);
             if (match) {
-                const videoSn = parseInt(match[1]);
-                const item = this._byVideoSn.get(videoSn);
+                const animeSn = parseInt(match[1]);
+                // 優先使用 animeSn 查詢（卡片 href 用的是 animeSn）
+                let item = this._byAnimeSn.get(animeSn);
+                // 如果 animeSn 查不到，嘗試用 videoSn 查詢（向後相容）
+                if (!item) {
+                    item = this._byVideoSn.get(animeSn);
+                }
                 if (item) {
-                    const episode = parseFloat(item.episode) || 0;
+                    const rawEp = item.episode || '';
+                    const episode = parseFloat(rawEp) || 0;
                     const fullyWatched = item.breakPoint?.breakPoint === -1;
-                    return { episode, fullyWatched };
+                    // 從 newestEpisode 提取最新集數（例如 "已更新至 第12集" → "12"）
+                    const latestMatch = item.newestEpisode?.match(/第\s*(\d+)/);
+                    const latestEpisode = latestMatch ? latestMatch[1] : rawEp;
+                    // 從 history 計算總觀看集數（去重）
+                    const watchedSet = new Set(item.history?.map(h => h.videoSn) || []);
+                    const totalWatched = watchedSet.size;
+                    return {
+                        episode,
+                        rawEpisode: rawEp,
+                        fullyWatched,
+                        latestEpisode,
+                        totalEpisodes: totalWatched
+                    };
                 }
             }
 
@@ -712,6 +751,17 @@
             const oldBadge = container.querySelector('.ani-watch-progress-badge');
             if (oldBadge) oldBadge.remove();
 
+            // 如果歷史紀錄還沒載入完成，先顯示「尚未觀看」
+            if (!this._rawArray || this._rawArray.length === 0) {
+                const badge = document.createElement('div');
+                badge.className = 'ani-watch-progress-badge unwatched';
+                badge.innerHTML = `<span class="watch-text">尚未觀看</span>`;
+                container.appendChild(badge);
+                cardLink.classList.remove('ani-watched-fade');
+                cardLink.classList.add('ani-unwatched-card');
+                return;
+            }
+
             const progress = this._getWatchProgress(cardLink);
             const badge = document.createElement('div');
             badge.className = 'ani-watch-progress-badge';
@@ -721,16 +771,31 @@
                 cardLink.classList.remove('ani-unwatched-card');
                 badge.classList.add('watched');
 
+                // 計算進度百分比（用於進度條背景）
+                // 如果有總集數資訊，計算觀看百分比；否則預設 100%
+                let progressPercent = 100;
+                if (progress.totalEpisodes && progress.totalEpisodes > 0) {
+                    progressPercent = Math.min(100, Math.round((progress.totalEpisodes / (progress.latestEpisode || 1)) * 100));
+                } else if (progress.fullyWatched) {
+                    progressPercent = 100;
+                }
+
                 let label;
                 if (progress.fullyWatched) {
-                    label = '已看完';
+                    label = `看到第 ${progress.rawEpisode} 話（最新第 ${progress.latestEpisode} 話）`;
                 } else if (progress.episode > 0) {
-                    // 支援小數集數顯示 (0.5, 1.5)
-                    label = `第 ${progress.episode} 話`;
+                    const displayEp = progress.rawEpisode && progress.rawEpisode !== String(progress.episode)
+                        ? progress.rawEpisode : progress.episode;
+                    label = `看到第 ${displayEp} 話（最新第 ${progress.latestEpisode} 話）`;
                 } else {
                     label = '已觀看';
                 }
-                badge.innerHTML = `<span class="watch-text">${label}</span>`;
+
+                // 建立帶進度條的徽章
+                badge.innerHTML = `
+                    <div class="watch-progress-bar" style="width:${progressPercent}%"></div>
+                    <span class="watch-text">${label}</span>
+                `;
             } else {
                 cardLink.classList.remove('ani-watched-fade');
                 cardLink.classList.add('ani-unwatched-card');
@@ -948,8 +1013,9 @@
                 .acr-dist-bar-bg{flex:1;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;}
                 .acr-dist-bar-fill{height:100%;border-radius:3px;}
                 .acr-dist-val{color:#d4d4d8;width:28px;text-align:right;font-size:10px;font-weight:500;flex-shrink:0;}
-.ani-watch-progress-badge{position:absolute;top:32px;left:6px;font-size:9px;padding:2px 10px;border-radius:50px;font-weight:500;z-index:10;pointer-events:none;letter-spacing:0.3px;line-height:1.3;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);display:inline-flex;align-items:center;gap:3px;flex-wrap:nowrap;max-width:180px;animation:watch-badge-in 0.35s cubic-bezier(0.16,1,0.3,1);}
-.ani-watch-progress-badge .watch-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;font-weight:500;text-shadow:none;}
+.ani-watch-progress-badge{position:absolute;top:32px;left:6px;font-size:9px;padding:2px 10px;border-radius:50px;font-weight:500;z-index:10;pointer-events:none;letter-spacing:0.3px;line-height:1.3;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);display:inline-flex;align-items:center;gap:3px;flex-wrap:nowrap;max-width:180px;overflow:hidden;}
+.ani-watch-progress-badge .watch-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;font-weight:500;text-shadow:none;position:relative;z-index:2;}
+.ani-watch-progress-badge .watch-progress-bar{position:absolute;top:0;left:0;height:100%;background:rgba(59,130,246,0.55);border-radius:50px;z-index:1;transition:width 0.3s ease;}
 .ani-watch-progress-badge.watched{background:rgba(59,130,246,0.22);color:#fff;border:none;box-shadow:0 2px 6px rgba(0,0,0,0.2);backdrop-filter:blur(6px);transition:all 0.3s cubic-bezier(0.4,0,0.2,1);}
 .ani-watch-progress-badge.watched::before{content:none;display:none;}
                 @keyframes watch-glow{0%,100%{opacity:0.5;}50%{opacity:1;}}
@@ -967,8 +1033,7 @@
                 body.ani-watched-fade-enabled .ani-watched-fade>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade .theme-img-block>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade .newanime-block__img>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade .newanime-img>img:not(.ani-low-rating-masked){opacity:0.32 !important;filter:grayscale(0.12) contrast(0.95);transition:opacity 0.3s ease,filter 0.3s ease;}
                 body.ani-watched-fade-enabled .ani-watched-fade:hover>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade:hover .theme-img-block>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade:hover .newanime-block__img>img:not(.ani-low-rating-masked),body.ani-watched-fade-enabled .ani-watched-fade:hover .newanime-img>img:not(.ani-low-rating-masked){opacity:1 !important;filter:none !important;}
                 body.ani-watched-fade-enabled .ani-watched-fade{display:block !important;cursor:pointer;}
-                @keyframes watch-badge-in{0%{opacity:0;transform:translateY(-6px) scale(0.92);}100%{opacity:1;transform:translateY(0) scale(1);}}
-                .ani-float-btn{position:fixed;right:20px;width:44px;height:44px;border-radius:50%;background:#18181c;border:1px solid rgba(255,255,255,0.12);color:#d4d4d8;box-shadow:0 4px 16px rgba(0,0,0,0.5);display:none;align-items:center !important;justify-content:center !important;text-align:center !important;cursor:pointer;font-size:16px;font-weight:bold;z-index:9999;transition:all 0.2s ease;user-select:none;padding:0 !important;line-height:1 !important;box-sizing:border-box !important;}
+                                .ani-float-btn{position:fixed;right:20px;width:44px;height:44px;border-radius:50%;background:#18181c;border:1px solid rgba(255,255,255,0.12);color:#d4d4d8;box-shadow:0 4px 16px rgba(0,0,0,0.5);display:none;align-items:center !important;justify-content:center !important;text-align:center !important;cursor:pointer;font-size:16px;font-weight:bold;z-index:9999;transition:all 0.2s ease;user-select:none;padding:0 !important;line-height:1 !important;box-sizing:border-box !important;}
                 .ani-float-btn:hover{transform:scale(1.08);background:#27272a;color:#3b82f6;border-color:rgba(59,130,246,0.4);}
                 .ani-float-btn.active{background:#3b82f6 !important;color:#fff !important;border-color:#2563eb !important;box-shadow:0 4px 20px rgba(59,130,246,0.4) !important;}
                 #ani-sort-float-btn{bottom:85px;font-size:15px;}#ani-mask-float-btn{bottom:135px;}#ani-block-float-btn{bottom:185px;}#ani-config-float-btn{bottom:235px;}
@@ -1313,6 +1378,9 @@
                                 <div class="arm-cache-left" style="color:${cacheTextColor} !important;">🗄️ 本地快取 <span class="arm-cache-badge">${cacheCount} 筆</span></div>
                                 <button class="arm-cache-clear" id="arm-cache-clear" style="color:${D('#dc2626','#f87171')} !important;">清除快取</button>
                             </div>
+                            <div style="margin-top:8px;display:flex;justify-content:center;">
+                                <button class="arm-btn" id="arm-export-history" style="background:${D('#ffffff',D('#ffffff','rgba(255,255,255,0.08)'))};color:${D('#0284c7','#60a5fa')};border:1px solid ${D('rgba(59,130,246,0.35)','rgba(96,165,250,0.35)')};box-shadow:none !important;max-width:260px;">📥 匯出觀看紀錄 (JSON)</button>
+                            </div>
                             <div class="arm-list-item" style="margin-top:4px;padding-top:10px;border-bottom:none;border-top:none !important;">
                                 <div class="arm-list-left">
                                     <div class="arm-list-title" style="font-size:12px;color:${listTitleColor} !important;">重溫操作引導</div>
@@ -1357,6 +1425,15 @@
             });
 
             document.getElementById('arm-restart-tour').addEventListener('click', () => { overlay.remove(); this.startTour(); });
+
+            document.getElementById('arm-export-history').addEventListener('click', () => {
+                if (WatchHistoryManager._rawArray.length === 0) {
+                    this.showToast('⚠️ 尚無觀看紀錄，請稍候背景同步完成');
+                    return;
+                }
+                WatchHistoryManager._exportJSON();
+                this.showToast('✅ 已匯出觀看紀錄 JSON');
+            });
 
             const close = () => overlay.remove();
             document.getElementById('arm-close-btn').addEventListener('click', close);
