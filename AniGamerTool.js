@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         [動漫瘋] StarMap - 評分星圖
-// @name:zh-TW   [動漫瘋] StarMap - 評分星圖
-// @name:zh-CN   [動漫瘋] StarMap - 评分星图
+// @name         [動畫瘋] StarMap - 評分星圖
+// @name:zh-TW   [動畫瘋] StarMap - 評分星圖
+// @name:zh-CN   [动画疯] StarMap - 评分星图
 // @namespace    http://tampermonkey.net/
 // @version      1.2.7
 // @description  Beautify AniGamer anime cover ratings. Auto color-coded scores, hoverable 5-star distribution tooltip, pulse skeleton loading, 24h LRU cache, anti-spoiler mask/block, lazy-load and rating auto-sort with global progress.
