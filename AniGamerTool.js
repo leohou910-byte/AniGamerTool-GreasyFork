@@ -493,8 +493,9 @@
 
         applyFilter(container, score) {
             if (!container) return;
+            const isListPage = App.isAnimeListPage();
             const cardLink = DOMUtils.getCardLink(container);
-            if (cardLink) {
+            if (cardLink && isListPage) {
                 const img = cardLink.querySelector('img');
                 if (img) {
                     if (score < ConfigManager.data.threshold) {
@@ -505,8 +506,13 @@
                     }
                 }
             }
-            const target = cardLink || container;
-            target.classList.toggle('ani-rating-blocked', score < ConfigManager.data.blockThreshold);
+            if (isListPage) {
+                const target = cardLink || container;
+                target.classList.toggle('ani-rating-blocked', score < ConfigManager.data.blockThreshold);
+            } else {
+                const target = cardLink || container;
+                target.classList.remove('ani-rating-blocked');
+            }
         },
 
         async processItem(sn, container) {
@@ -909,7 +915,8 @@
                 .acr-dist-bar-fill{height:100%;border-radius:3px;}
                 .acr-dist-val{color:#d4d4d8;width:28px;text-align:right;font-size:10px;font-weight:500;flex-shrink:0;}
                 .ani-watch-progress-badge{position:absolute;top:32px;left:6px;background:rgba(255,255,255,0.95);color:#0ea5e9;font-size:10px;padding:3.5px 7px;border-radius:4px;font-weight:700;z-index:10;pointer-events:none;border:1px solid rgba(14,165,233,0.35);box-shadow:0 2px 8px rgba(0,0,0,0.08);letter-spacing:0.5px;line-height:1;transition:opacity 0.3s ease,filter 0.3s ease;}
-                .ani-watch-progress-badge.unwatched{background:rgba(241,245,249,0.95);color:#0ea5e9;border:1px solid rgba(14,165,233,0.4);font-weight:700;box-shadow:0 2px 6px rgba(14,165,233,0.15);}
+                .ani-watch-progress-badge.unwatched{background:rgba(255,235,238,0.95);color:#e53935;border:1px solid rgba(229,57,53,0.5);font-weight:700;box-shadow:0 2px 8px rgba(229,57,53,0.25);animation:acr-unwatched-pulse 2s infinite;}
+                @keyframes acr-unwatched-pulse{0%,100%{box-shadow:0 2px 8px rgba(229,57,53,0.25);}50%{box-shadow:0 2px 14px rgba(229,57,53,0.5);}}
                 body:not(.ani-disable-masking) .ani-low-rating-masked{filter:grayscale(0.95) opacity(0.2) blur(2.5px) !important;transition:filter 0.3s ease,opacity 0.3s ease;}
                 body:not(.ani-disable-masking) .ani-low-rating-masked .ani-custom-rating,body:not(.ani-disable-masking) .ani-low-rating-masked .ani-watch-progress-badge{opacity:1 !important;pointer-events:auto !important;filter:none !important;backdrop-filter:none !important;transition:opacity 0.3s ease;}
                 body:not(.ani-disable-masking) a:hover .ani-low-rating-masked,body:not(.ani-disable-masking) .theme-list-main:hover .ani-low-rating-masked,body:not(.ani-disable-masking) .newanime-block__link:hover .ani-low-rating-masked,body:not(.ani-disable-masking) .newanime-block:hover .ani-low-rating-masked,body:not(.ani-disable-masking) .theme-img-block:hover .ani-low-rating-masked{filter:grayscale(0) opacity(1) blur(0px) !important;}
@@ -1045,12 +1052,13 @@
         },
 
         updateActionButtonsVisibility() {
+            const isListPage = App.isAnimeListPage();
             const btns = ['ani-sort-float-btn', 'ani-mask-float-btn', 'ani-block-float-btn']
                 .map(id => document.getElementById(id));
             const hasCards = document.querySelector('a.theme-list-main') !== null;
-            btns.forEach(btn => { if (btn) btn.style.display = hasCards ? 'inline-flex' : 'none'; });
+            btns.forEach(btn => { if (btn) btn.style.display = (isListPage && hasCards) ? 'inline-flex' : 'none'; });
             const configBtn = document.getElementById('ani-config-float-btn');
-            if (configBtn) configBtn.style.display = 'inline-flex';
+            if (configBtn) configBtn.style.display = isListPage ? 'inline-flex' : 'none';
         },
 
         injectActionButtons() {
@@ -1433,6 +1441,10 @@
         _bodyObserver: null,
         _bodyObserverDebounce: null,
 
+        isAnimeListPage() {
+            return /animeList\.php/.test(window.location.pathname);
+        },
+
         _observeCards() {
             const selector = 'a.theme-list-main:not([data-rating-processed])';
             this.progress.ratingTotal = 0;
@@ -1569,6 +1581,14 @@
 
             // 淡化標記
             document.body.classList.toggle('ani-watched-fade-enabled', ConfigManager.data.fadeWatched);
+
+            // 非 animeList.php 頁面直接隱藏浮動按鈕
+            if (!this.isAnimeListPage()) {
+                ['ani-sort-float-btn', 'ani-mask-float-btn', 'ani-block-float-btn', 'ani-config-float-btn'].forEach(id => {
+                    const btn = document.getElementById(id);
+                    if (btn) btn.style.display = 'none';
+                });
+            }
 
             // 自動排序
             if (ConfigManager.data.sortEnabled) {
