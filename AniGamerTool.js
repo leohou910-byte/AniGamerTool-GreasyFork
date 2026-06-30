@@ -532,7 +532,7 @@
 
             try {
                 const res = await RequestManager.scheduleFetch(`/animeRef.php?sn=${sn}`);
-                if (!res || !res.ok) { skeleton.remove(); App.progress.ratingLoaded++; App.progress.updateBar(); return; }
+                if (!res || !res.ok) { skeleton.remove(); return; }
                 const html = await res.text();
                 const parsed = this.parseFromHtml(html);
                 skeleton.remove();
@@ -540,13 +540,13 @@
                     CacheManager.set(sn, parsed.score, parsed.count);
                     this.render(container, parsed);
                     this.applyFilter(container, parsed.score);
+                    App.progress.ratingLoaded++;
+                    App.progress.updateBar();
                 }
             } catch (e) {
                 console.error('[評分美化] 抓取評分時出錯: SN ' + sn, e);
             } finally {
                 if (skeleton && skeleton.parentNode) skeleton.remove();
-                App.progress.ratingLoaded++;
-                App.progress.updateBar();
             }
         }
     };
@@ -824,8 +824,6 @@
                         await RatingProcessor.processItem(match[1], container);
                     }
                 }
-                App.progress.ratingLoaded++;
-                App.progress.updateBar();
             }
 
             progressBar.style.width = '100%';
