@@ -658,9 +658,11 @@
 
             if (cardTitle && this._map.size > 0) {
                 const cleanCardTitle = DOMUtils.cleanTitle(cardTitle);
+                const normalize = (s) => s.replace(/\s+/g, '').trim();
+                const cardNorm = normalize(cleanCardTitle);
                 for (const [historyTitle, progress] of this._map.entries()) {
-                    if (historyTitle === cleanCardTitle || (cleanCardTitle.length >= 3 && historyTitle.length >= 3 &&
-                        (historyTitle.includes(cleanCardTitle) || cleanCardTitle.includes(historyTitle)))) {
+                    const histNorm = normalize(historyTitle);
+                    if (cardNorm.length > 0 && cardNorm === histNorm) {
                         historyProgress = progress; break;
                     }
                 }
