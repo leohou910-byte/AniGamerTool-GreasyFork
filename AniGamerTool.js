@@ -1123,6 +1123,7 @@
             if (memberList) {
                 const li = document.createElement('li');
                 li.className = 'top_btn_rating_setting';
+                li.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;';
                 li.innerHTML = '<a href="javascript:void(0)" style="display:flex;align-items:center;justify-content:center;"><i class="material-icons">star_rate</i></a><span class="tooltip">評分設定</span>';
                 li.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); this.openModal(); }, true);
                 const anchor = li.querySelector('a');
