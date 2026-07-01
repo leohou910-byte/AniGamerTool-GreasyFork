@@ -1,8 +1,6 @@
 # 🎬 [動漫瘋] StarMap - 評分星圖
 
-**StarMap - 評分星圖**
-
-一款強化巴哈姆特動畫瘋的使用者腳本（UserScript），為動畫封面加上**評分徽章**、**防雷遮罩/屏蔽**、**觀看進度標記**以及**自訂排序**等便利功能。
+**StarMap - 評分星圖** 是一款強化巴哈姆特動畫瘋的使用者腳本（UserScript），為動畫封面加上**評分徽章**、**防雷遮罩/屏蔽**、**觀看進度標記**以及**自訂排序**等便利功能。
 
 ---
 
@@ -29,6 +27,7 @@
 ### 4. 👁️‍🗨️ 已觀看作品淡化與進度徽章
 - **視覺淡化**：自動降低已看過作品的封面透明度；未看過的作品則加上亮藍色外框突顯。
 - **進度提示**：顯示「觀看進度：第 X / Y 話」或「尚未觀看」。
+- **特殊集數支援**：正確辨識 `第13B集`、`電影 共1集`、`特別篇 共1集` 等非標準集數格式。
 - **雙向同步**：背景安全同步動畫瘋歷史觀看紀錄 API，無需手動操作。
 
 ### 5. ⇅ 自訂評分高低排序
@@ -61,8 +60,79 @@
 ## 📦 安裝方式
 
 1. 瀏覽器需安裝 [Tampermonkey](https://www.tampermonkey.net/) 擴充功能。
-2. [點此安裝腳本](https://greasyfork.org/zh-TW/scripts/584454)（或直接複製 `AniGamerTool.js` 內容至 Tampermonkey 新建腳本）。
+2. 直接複製 `dist/script.user.js` 的完整內容至 Tampermonkey 新建腳本中貼上。
 3. 開啟 [巴哈姆特動畫瘋](https://ani.gamer.com.tw/)，即自動生效。
+
+---
+
+## 🏗️ 專案架構（開發者用）
+
+本專案採用**開發時檔案拆分，發布時自動拼接整合**的策略，保持極簡開發環境。
+
+```
+AniGamerTool-GreasyFork/
+├── build.py                 # Python 建置腳本（純原生，無第三方依賴）
+├── build.js                 # Node.js 建置腳本（備用）
+├── src/
+│   ├── header.js            # UserScript 元數據區塊
+│   ├── main.js              # 主程式入口（IIFE 包裝 + 初始化順序）
+│   ├── core/
+│   │   ├── EventBus.js      # 發布/訂閱事件匯流排（模組間解耦通訊）
+│   │   ├── StateManager.js  # 中央狀態管理器（單一事實來源 + 響應式更新）
+│   │   ├── BaseModule.js    # 模組基底類別（init/destroy 生命週期 + 自動資源清理）
+│   │   └── ConfigManager.js # 設定管理模組（繼承 BaseModule）
+│   └── modules/
+│       ├── CacheManager.js      # LRU 快取管理（TTL + 容量限制 + localStorage）
+│       ├── RequestManager.js    # 請求佇列管理（頻率控制 + GM_xmlhttpRequest fallback）
+│       ├── DOMUtils.js          # DOM 工具函數（元素提取、卡片判斷、標題清理）
+│       ├── RatingProcessor.js   # 評分處理（HTML 解析、星數分佈、渲染過濾）
+│       ├── WatchHistoryManager.js # 觀看紀錄管理（API 同步、淡化效果、進度徽章）
+│       ├── SortManager.js       # 排序管理（DOM 快照、評分排序、自動載入）
+│       └── UIComponents.js      # UI 元件（CSS 注入、Modal 設定、功能導覽、浮動按鈕）
+├── dist/
+│   └── script.user.js       # 建置產出（可直接貼進 Tampermonkey）
+└── test/                    # 測試用資料（HTML 快照、JSON 範例）
+```
+
+### 建置方式
+
+```bash
+# 方式一（建議）：使用 Node.js
+node build.js
+
+# 方式二：使用 Python（若環境支援）
+python build.py
+```
+
+輸出為 `dist/script.user.js`，即為 Tampermonkey 可使用的單一腳本檔案。
+
+### 模組依賴圖
+
+```
+header.js (元數據)
+  → EventBus.js       (模組間事件通訊)
+  → StateManager.js   (中央狀態儲存)
+  → BaseModule.js     (基底類別，自動資源清理)
+  → ConfigManager.js  (設定管理，繼承 BaseModule)
+
+  → CacheManager.js   (LRU 快取)
+  → RequestManager.js (請求佇列)
+  → DOMUtils.js       (DOM 工具)
+
+  → RatingProcessor.js       ← 依賴 CacheManager, RequestManager, DOMUtils
+  → WatchHistoryManager.js    ← 依賴 RequestManager, DOMUtils
+  → SortManager.js            ← 依賴 DOMUtils, RatingProcessor
+  → UIComponents.js           ← 依賴 CacheManager, WatchHistoryManager, SortManager, RatingProcessor
+
+  → main.js (啟動所有模組)
+```
+
+### 設計原則
+
+- **EventBus**：模組間完全解耦，透過 `config:changed`、`rating:rendered`、`ui:showToast` 等事件通訊
+- **StateManager**：單一事實來源，所有設定以 `config.xxx` 鍵名儲存，支援 `subscribe()` 響應式更新
+- **BaseModule**：統一生命週期，提供 `_setTimeout()`、`_createMutationObserver()`、`_listenEvent()` 等安全包裝，自動在 `destroy()` 清理所有資源，防止記憶體洩漏
+- **data 屬性過濾**：使用 `[data-rating-processed]` 屬性標記已處理卡片，防止 MutationObserver 無限遞迴
 
 ---
 
