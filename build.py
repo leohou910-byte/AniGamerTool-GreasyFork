@@ -13,15 +13,23 @@ DIST_DIR = "dist"
 OUTPUT_FILE = os.path.join(DIST_DIR, "script.user.js")
 
 # 依賴順序：header → core/* → modules/* → main.js
+# 必須與 build.js 的 CORE_ORDER 和 modules 順序一致
 FILE_ORDER = [
     "src/header.js",
-    # core layer
+    # core layer (依依賴順序排列)
     "src/core/EventBus.js",
     "src/core/StateManager.js",
     "src/core/BaseModule.js",
     "src/core/ConfigManager.js",
-    # modules layer (依賴注入後才初始化)
-    # 此處由 main.js 引入，build.py 僅負責拼接
+    # modules layer (依賴注入順序排列)
+    "src/modules/CacheManager.js",
+    "src/modules/DOMUtils.js",
+    "src/modules/RatingProcessor.js",
+    "src/modules/RequestManager.js",
+    "src/modules/SortManager.js",
+    "src/modules/UIComponents.js",
+    "src/modules/WatchHistoryManager.js",
+    # main.js 最後
     "src/main.js",
 ]
 
@@ -29,24 +37,9 @@ FILE_ORDER = [
 def collect_files():
     """依照依賴順序收集所有待拼接的 JS 檔案路徑"""
     paths = []
-    paths.append("src/header.js")
-
-    # core 層：依字母排序
-    core_files = sorted(glob.glob("src/core/*.js"))
-    for f in core_files:
-        if f not in paths:
-            paths.append(f)
-
-    # modules 層：依字母排序
-    modules_files = sorted(glob.glob("src/modules/*.js"))
-    for f in modules_files:
-        if f not in paths:
-            paths.append(f)
-
-    # main.js 最後
-    if "src/main.js" not in paths:
-        paths.append("src/main.js")
-
+    for filepath in FILE_ORDER:
+        if os.path.isfile(filepath) and filepath not in paths:
+            paths.append(filepath)
     return paths
 
 
@@ -81,12 +74,16 @@ def build():
             continue
         lines = content.count("\n") + 1
         total_lines += lines
-        # 加入註解標記來源（便於除錯）
-        header_comment = f"\n// ============================================================\n// Source: {filepath}\n// ============================================================\n"
-        parts.append(header_comment)
-        parts.append(content)
-        parts.append("\n")
-        print(f"  ✓ {filepath} ({lines} 行)")
+        # header.js 不加 source 註解，保持 UserScript 元數據在第一行
+        if filepath == "src/header.js":
+            parts.append(content)
+            parts.append("\n")
+        else:
+            header_comment = f"\n// ============================================================\n// Source: {filepath}\n// ============================================================\n"
+            parts.append(header_comment)
+            parts.append(content)
+            parts.append("\n")
+        print(f"  [OK] {filepath} ({lines} lines)")
 
     # 寫入輸出檔案
     output_content = "".join(parts)
@@ -94,10 +91,10 @@ def build():
         f.write(output_content)
 
     print(f"\n{'=' * 50}")
-    print(f"✓ 建置完成!")
-    print(f"  輸出檔案: {OUTPUT_FILE}")
-    print(f"  總行數:   {total_lines} 行")
-    print(f"  檔案大小: {os.path.getsize(OUTPUT_FILE):,} bytes")
+    print(f"[DONE] Build complete!")
+    print(f"  Output: {OUTPUT_FILE}")
+    print(f"  Lines:  {total_lines}")
+    print(f"  Size:   {os.path.getsize(OUTPUT_FILE):,} bytes")
     print(f"{'=' * 50}")
 
 

@@ -3,7 +3,7 @@
 // @name:zh-TW   [動漫瘋] StarMap - 評分星圖
 // @name:zh-CN   [動漫瘋] StarMap - 评分星图
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
+// @version      1.2.7
 // @description  Beautify AniGamer anime cover ratings. Auto color-coded scores, hoverable 5-star distribution tooltip, pulse skeleton loading, 24h LRU cache, anti-spoiler mask/block, lazy-load and rating auto-sort with global progress.
 // @description:zh-TW 美化動畫瘋封面評分，支援自動分數變色、懸浮五星佔比詳情、脈衝骨架屏載入、24小時快取、最低分數防雷遮罩/完全屏蔽、懶載入與全局進度條顯示。
 // @description:zh-CN 美化动画疯封面评分，支持自动分数变色、悬浮五星占比详情，脉搏骨架屏加载，24小时缓存，最低分数防雷遮罩/完全屏蔽，懒加载与全局进度条显示。
@@ -17,7 +17,7 @@
 // ==/UserScript==
 
 // ============================================================
-// Source: src\core\EventBus.js
+// Source: src/core/EventBus.js
 // ============================================================
 // ================================================================
 // EventBus - 發布/訂閱事件匯流排
@@ -128,7 +128,7 @@ const EventBus = (function () {
 })();
 
 // ============================================================
-// Source: src\core\StateManager.js
+// Source: src/core/StateManager.js
 // ============================================================
 // ================================================================
 // StateManager - 中央狀態管理器
@@ -292,7 +292,7 @@ const StateManager = (function () {
 })();
 
 // ============================================================
-// Source: src\core\BaseModule.js
+// Source: src/core/BaseModule.js
 // ============================================================
 // ================================================================
 // BaseModule - 模組基底類別
@@ -533,7 +533,7 @@ const BaseModule = (function () {
 })();
 
 // ============================================================
-// Source: src\core\ConfigManager.js
+// Source: src/core/ConfigManager.js
 // ============================================================
 // ================================================================
 // ConfigManager - 設定管理模組
@@ -759,7 +759,7 @@ const ConfigManager = (function () {
 })();
 
 // ============================================================
-// Source: src\modules\CacheManager.js
+// Source: src/modules/CacheManager.js
 // ============================================================
 // ================================================================
 // CacheManager - LRU 快取管理模組
@@ -986,7 +986,7 @@ const CacheManager = (function () {
 })();
 
 // ============================================================
-// Source: src\modules\DOMUtils.js
+// Source: src/modules/DOMUtils.js
 // ============================================================
 // ================================================================
 // DOMUtils - DOM 工具函數模組
@@ -1149,7 +1149,7 @@ const DOMUtils = (function () {
 })();
 
 // ============================================================
-// Source: src\modules\RatingProcessor.js
+// Source: src/modules/RatingProcessor.js
 // ============================================================
 // ================================================================
 // RatingProcessor - 評分處理模組
@@ -1423,7 +1423,7 @@ const RatingProcessor = (function () {
 })();
 
 // ============================================================
-// Source: src\modules\RequestManager.js
+// Source: src/modules/RequestManager.js
 // ============================================================
 // ================================================================
 // RequestManager - 請求佇列管理模組
@@ -1557,7 +1557,7 @@ const RequestManager = (function () {
 })();
 
 // ============================================================
-// Source: src\modules\SortManager.js
+// Source: src/modules/SortManager.js
 // ============================================================
 // ================================================================
 // SortManager - 排序管理模組
@@ -1805,7 +1805,7 @@ const SortManager = (function () {
 })();
 
 // ============================================================
-// Source: src\modules\UIComponents.js
+// Source: src/modules/UIComponents.js
 // ============================================================
 // ================================================================
 // UIComponents - UI 元件模組
@@ -2535,7 +2535,7 @@ const UIComponents = (function () {
 })();
 
 // ============================================================
-// Source: src\modules\WatchHistoryManager.js
+// Source: src/modules/WatchHistoryManager.js
 // ============================================================
 // ================================================================
 // WatchHistoryManager - 觀看紀錄管理模組
@@ -2875,7 +2875,7 @@ const WatchHistoryManager = (function () {
 })();
 
 // ============================================================
-// Source: src\main.js
+// Source: src/main.js
 // ============================================================
 // ================================================================
 // main.js - 主程式入口
